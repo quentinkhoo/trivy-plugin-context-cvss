@@ -37,7 +37,7 @@ func main() {
 	modInteg := flag.String("mi", "", "Modified Integrity (X, L, H)")
 	modAvail := flag.String("ma", "", "Modified Availability (X, L, H)")
 	// General non-CVSS related flags
-	smartApply := flag.Bool("smart", true, "Smartly apply environmental metrics only if the environmental score would be lowered")
+	smartApply := flag.Bool("smart", false, "Smartly apply environmental metrics only if the environmental score would be lowered")
 
 	flag.Parse()
 
