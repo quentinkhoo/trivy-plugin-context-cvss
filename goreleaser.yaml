@@ -1,0 +1,28 @@
+version: 2
+project_name: trivy_plugin_context_cvss
+
+builds:
+  -
+    main: .
+    binary: context-cvss
+    ldflags:
+      - -s -w
+      - "-extldflags '-static'"
+      - -X main.version={{.Version}}
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  -
+    formats:
+      - tar.gz
+    name_template: "{{.ProjectName}}_{{.Version}}_{{.Os}}-{{.Arch}}"
+    files:
+      - README.md
+      - plugin.yaml
