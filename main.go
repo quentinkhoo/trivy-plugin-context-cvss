@@ -192,7 +192,10 @@ func applyMetrics(baseVector, e, rl, rc, cr, ir, ar, mav, mac, mpr, mui, mc, mi,
 			upperVal := strings.ToUpper(m.value)
 			shouldAppend := true
 
-			if smart {
+			isRequirement := m.metric == "CR" || m.metric == "IR" || m.metric == "AR"
+
+			// Only apply -smart logic if its not a business requirement metric
+			if smart && !isRequirement {
 				improved, _ := checkIfEnvRatingImproved(sb.String(), m.metric, upperVal)
 				shouldAppend = improved
 			}
