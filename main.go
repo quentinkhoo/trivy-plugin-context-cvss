@@ -29,6 +29,9 @@ func main() {
 	modRemediationLevel := flag.String("rl", "", "Modified Remediation Level (X, O, T, W, U)")
 	modReportConf := flag.String("rc", "", "Modified Report Confidence (X, U, R, C)")
 	// Environmental Metrics flags
+	confReq := flag.String("cr", "", "Confidentiality Requirement (X, L, M, H)")
+	integReq := flag.String("ir", "", "Integrity Requirement (X, L, M, H)")
+	availReq := flag.String("ar", "", "Availability Requirement (X, L, M, H)")
 	modAttackVec := flag.String("mav", "", "Modified Attack Vector (X, N, A, L, P)")
 	modAttackComp := flag.String("mac", "", "Modified Attack Complexity (X, L, H)")
 	modPrivReq := flag.String("mpr", "", "Modified Privileges Required (X, N, L, H)")
@@ -66,7 +69,7 @@ func main() {
 			}
 
 			// Apply Environmental Metrics to the base vector
-			newVectorStr, err := applyMetrics(vectorStr, *modExploitCodeMaturity, *modRemediationLevel, *modReportConf, *modAttackVec, *modAttackComp, *modPrivReq, *modUserInt, *modConf, *modInteg, *modAvail, *smartApply)
+			newVectorStr, err := applyMetrics(vectorStr, *modExploitCodeMaturity, *modRemediationLevel, *modReportConf, *confReq, *integReq, *availReq, *modAttackVec, *modAttackComp, *modPrivReq, *modUserInt, *modConf, *modInteg, *modAvail, *smartApply)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error applying environmental metrics for %s: %v\n", vuln.VulnerabilityID, err)
 			}
@@ -151,7 +154,7 @@ func chooseCVSSSource(vuln types.DetectedVulnerability) dbTypes.SourceID {
 // By modifying the base vector with the provided Temporal/Environmental metrics, we can compute a Temporal/Environmental Score.
 // If you're not familiar with contextual metrics like Environmental Metrics 
 // refer to: https://www.first.org/cvss/v3-1/specification-document#Environmental-Metrics
-func applyMetrics(baseVector, e, rl, rc, mav, mac, mpr, mui, mc, mi, ma string, smart bool) (string, error) {
+func applyMetrics(baseVector, e, rl, rc, cr, ir, ar, mav, mac, mpr, mui, mc, mi, ma string, smart bool) (string, error) {
 	var sb strings.Builder
 	sb.WriteString(baseVector)
 
@@ -178,14 +181,14 @@ func applyMetrics(baseVector, e, rl, rc, mav, mac, mpr, mui, mc, mi, ma string, 
 			metric string
 			value  string
 		}{
-			{"MAV", mav}, {"MAC", mac}, {"MPR", mpr}, {"MUI", mui}, {"MA", ma}, {"MC", mc}, {"MI", mi},
+			{"CR", cr}, {"IR", ir}, {"AR", ar}, {"MAV", mav}, {"MAC", mac}, {"MPR", mpr}, {"MUI", mui}, {"MA", ma}, {"MC", mc}, {"MI", mi},
 		}
 
 		for _, m := range environmentals {
 			if m.value == "" {
 				continue
 			}
-
+			fmt.Printf("Processing Environmental Metric %s with value %s\n", m.metric, m.value)
 			upperVal := strings.ToUpper(m.value)
 			shouldAppend := true
 
@@ -209,5 +212,5 @@ func checkIfEnvRatingImproved(baseVector, metric, value string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return envScore < baseScore, nil
+	return envScore <= baseScore, nil
 }

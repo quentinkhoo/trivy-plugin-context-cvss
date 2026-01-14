@@ -1,6 +1,6 @@
 name: context-cvss
 repository: github.com/quentinkhoo/trivy-plugin-context-cvss
-version: "0.1.0"
+version: "0.1.1"
 maintainer: quentinkhoo
 summary: Recalculate vulnerability scores with environmental and temporal metrics
 description: |-
