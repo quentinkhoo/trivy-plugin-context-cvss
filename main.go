@@ -40,7 +40,8 @@ func main() {
 	modInteg := flag.String("mi", "", "Modified Integrity (X, L, H)")
 	modAvail := flag.String("ma", "", "Modified Availability (X, L, H)")
 	// General non-CVSS related flags
-	smartApply := flag.Bool("smart", false, "Smartly apply environmental metrics only if the environmental score would be lowered")
+	smartApply := flag.Bool("smart", false, "Smartly apply environmental metrics only if the environmental score would be lowered, does not affect CR/IR/AR.")
+	forceCtxRating := flag.Bool("force-ctx-rating", false, "Force a contextual rating based on what Trivy gave even if CVSS doesn't exist from Trivy")
 
 	flag.Parse()
 
@@ -64,9 +65,20 @@ func main() {
 				vectorStr = vuln.CVSS[cvssSource].V3Vector
 			}
 
+			// If no VectorStr found, we update the contextual ratings to match that of the original one provided by trivy
 			if vectorStr == "" {
-				continue
-			}
+        if *forceCtxRating {
+          metrics := ContextualMetricsResults{
+            Vector:              "",
+            TemporalScore:       0,
+            TemporalRating:      vuln.Severity,
+            EnvironmentalScore:  0,
+            EnvironmentalRating: vuln.Severity,
+          }
+          updateContextualMetrics(vuln, metrics)
+        }
+        continue
+      }
 
 			// Apply Environmental Metrics to the base vector
 			newVectorStr, err := applyMetrics(vectorStr, *modExploitCodeMaturity, *modRemediationLevel, *modReportConf, *confReq, *integReq, *availReq, *modAttackVec, *modAttackComp, *modPrivReq, *modUserInt, *modConf, *modInteg, *modAvail, *smartApply)
@@ -81,23 +93,15 @@ func main() {
 				continue
 			}
 
-			tempSeverityRating := cvss.CalculateSeverityRating(tempScore)
-			envSeverityRating := cvss.CalculateSeverityRating(envScore)
-			contextualMetricsResults := ContextualMetricsResults{
-				Vector: newVectorStr,
-				TemporalScore:       tempScore,
-				TemporalRating:      tempSeverityRating,
-				EnvironmentalScore:  envScore,
-				EnvironmentalRating: envSeverityRating,
-			}
-
-			// Store the results in the Custom field of the vulnerability which trivy conveniently provides as part of the Struct
-			if vuln.Custom == nil {
-				vuln.Custom = make(map[string]any)
-			}
-			if customMap, ok := vuln.Custom.(map[string]any); ok {
-				customMap["ContextualMetrics"] = contextualMetricsResults
-			}
+			metrics := ContextualMetricsResults{
+        Vector:              newVectorStr,
+        TemporalScore:       tempScore,
+        TemporalRating:      cvss.CalculateSeverityRating(tempScore),
+        EnvironmentalScore:  envScore,
+        EnvironmentalRating: cvss.CalculateSeverityRating(envScore),
+      }
+      
+      updateContextualMetrics(vuln, metrics)
 		}
 	}
 
@@ -216,4 +220,14 @@ func checkIfEnvRatingImproved(baseVector, metric, value string) (bool, error) {
 		return false, err
 	}
 	return envScore <= baseScore, nil
+}
+
+func updateContextualMetrics(vuln *types.DetectedVulnerability, results ContextualMetricsResults) {
+	// Store the results in the Custom field of the vulnerability which trivy conveniently provides as part of the Struct
+	if vuln.Custom == nil {
+		vuln.Custom = make(map[string]any)
+	}
+	if customMap, ok := vuln.Custom.(map[string]any); ok {
+		customMap["ContextualMetrics"] = results
+	}
 }
