@@ -10,7 +10,7 @@ import (
 	gocvss40 "github.com/pandatix/go-cvss/40"
 )
 
-//Given a Vector String, determine the CVSS Version and validate the vector.
+// Given a Vector String, determine the CVSS Version and validate the vector.
 // It could either be CVSS 2.0, 3.0, 3.1 or 4.0
 func GetCVSSVersion(vector string) (string, error) {
 	switch {
@@ -45,7 +45,7 @@ func GetCVSSVersion(vector string) (string, error) {
 }
 
 // Given a CVSS vector string, calculate and return the Base, Temporal, and Environmental scores.
-// For CVSS 4.0, unfrotunately the library only calculates a single Score()
+// For CVSS 4.0, unfortunately the library only calculates a single Score()
 // TODO: update the code when the library supports separate scores for CVSS 4.0/does something smarter for CVSS 4.0
 func CalculateScores(vector string) (float64, float64, float64, error) {
 	cvssVersion, err := GetCVSSVersion(vector)

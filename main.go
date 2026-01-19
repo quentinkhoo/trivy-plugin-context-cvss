@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"trivy-plugin-context-cvss/cvss"
 
@@ -45,6 +44,14 @@ func main() {
 
 	flag.Parse()
 
+	opts := cvss.MetricsOptions{
+		E: *modExploitCodeMaturity, RL: *modRemediationLevel, RC: *modReportConf,
+		CR: *confReq, IR: *integReq, AR: *availReq,
+		MAV: *modAttackVec, MAC: *modAttackComp, MPR: *modPrivReq, MUI: *modUserInt,
+		MC: *modConf, MI: *modInteg, MA: *modAvail,
+		Smart: *smartApply,
+	}
+
 	inputData, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		panic(fmt.Errorf("failed to read from stdin: %w", err))
@@ -81,7 +88,7 @@ func main() {
       }
 
 			// Apply Environmental Metrics to the base vector
-			newVectorStr, err := applyMetrics(vectorStr, *modExploitCodeMaturity, *modRemediationLevel, *modReportConf, *confReq, *integReq, *availReq, *modAttackVec, *modAttackComp, *modPrivReq, *modUserInt, *modConf, *modInteg, *modAvail, *smartApply)
+			newVectorStr, err := cvss.ApplyMetrics(vectorStr, opts)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error applying environmental metrics for %s: %v\n", vuln.VulnerabilityID, err)
 			}
@@ -151,75 +158,6 @@ func chooseCVSSSource(vuln types.DetectedVulnerability) dbTypes.SourceID {
 	}
 
 	return ""
-}
-
-// TODO: Add support for CVSS v2 and v4
-// In CVSS 3.0/3.1, Environmental metrics like MA, MC, MI can be applied to the base vector.
-// By modifying the base vector with the provided Temporal/Environmental metrics, we can compute a Temporal/Environmental Score.
-// If you're not familiar with contextual metrics like Environmental Metrics 
-// refer to: https://www.first.org/cvss/v3-1/specification-document#Environmental-Metrics
-func applyMetrics(baseVector, e, rl, rc, cr, ir, ar, mav, mac, mpr, mui, mc, mi, ma string, smart bool) (string, error) {
-	var sb strings.Builder
-	sb.WriteString(baseVector)
-
-	cvssVersion, err := cvss.GetCVSSVersion(baseVector)
-	if err != nil {
-		return "", err
-	}
-
-	if cvssVersion == "CVSS 3.0" || cvssVersion == "CVSS 3.1" {
-		temporals := []struct {
-			metric string
-			value  string
-		}{
-			{"E", e}, {"RL", rl}, {"RC", rc},
-		}
-		
-		for _, m := range temporals {
-			if m.value != "" {
-				sb.WriteString(fmt.Sprintf("/%s:%s", m.metric, strings.ToUpper(m.value)))
-			}
-		}
-
-		environmentals := []struct {
-			metric string
-			value  string
-		}{
-			{"CR", cr}, {"IR", ir}, {"AR", ar}, {"MAV", mav}, {"MAC", mac}, {"MPR", mpr}, {"MUI", mui}, {"MA", ma}, {"MC", mc}, {"MI", mi},
-		}
-
-		for _, m := range environmentals {
-			if m.value == "" {
-				continue
-			}
-			fmt.Printf("Processing Environmental Metric %s with value %s\n", m.metric, m.value)
-			upperVal := strings.ToUpper(m.value)
-			shouldAppend := true
-
-			isRequirement := m.metric == "CR" || m.metric == "IR" || m.metric == "AR"
-
-			// Only apply -smart logic if its not a business requirement metric
-			if smart && !isRequirement {
-				improved, _ := checkIfEnvRatingImproved(sb.String(), m.metric, upperVal)
-				shouldAppend = improved
-			}
-
-			if shouldAppend {
-				sb.WriteString(fmt.Sprintf("/%s:%s", m.metric, upperVal))
-			}
-		}
-  }
-
-	return sb.String(), nil
-}
-
-func checkIfEnvRatingImproved(baseVector, metric, value string) (bool, error) {
-	modifiedVectorStr := baseVector + fmt.Sprintf("/%s:%s", metric, value)
-	baseScore, _, envScore, err := cvss.CalculateScores(modifiedVectorStr)
-	if err != nil {
-		return false, err
-	}
-	return envScore <= baseScore, nil
 }
 
 func updateContextualMetrics(vuln *types.DetectedVulnerability, results ContextualMetricsResults) {
