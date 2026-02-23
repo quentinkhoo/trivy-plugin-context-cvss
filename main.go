@@ -45,7 +45,7 @@ func processReport(reportData map[string]any, ro flags.RunOptions) {
 		return
 	}
 	nvdVectors := map[string]string{}
-	if ro.FetchCVSS {
+	if ro.FetchMissingCVSS {
 		nvdVectors = fetchNVDVectors(report.CollectCVEsWithoutCVSS(results), ro.NvdAPIKey)
 	}
 	epssData := map[string]epss.Data{}

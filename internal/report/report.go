@@ -118,7 +118,7 @@ func ProcessVuln(vuln map[string]any, nvdVectors map[string]string, epssData map
 	vulnID, _ := vuln["VulnerabilityID"].(string)
 	severity, _ := vuln["Severity"].(string)
 
-	vectorStr := resolveVector(vuln, vulnID, nvdVectors, ro.FetchCVSS)
+	vectorStr := resolveVector(vuln, vulnID, nvdVectors, ro.FetchMissingCVSS)
 	if vectorStr == "" {
 		if ro.ForceCtxRating {
 			setContextualMetrics(vuln, contextualMetrics{
@@ -162,12 +162,12 @@ func ProcessVuln(vuln map[string]any, nvdVectors map[string]string, epssData map
 }
 
 // resolveVector returns the CVSS vector for the vulnerability, falling back to
-// the NVD-fetched vector if the report has none and fetchCVSS is enabled.
-func resolveVector(vuln map[string]any, vulnID string, nvdVectors map[string]string, fetchCVSS bool) string {
+// the NVD-fetched vector if the report has none and fetchMissingCVSS is enabled.
+func resolveVector(vuln map[string]any, vulnID string, nvdVectors map[string]string, fetchMissingCVSS bool) string {
 	if v := getCVSSVectorFromVuln(vuln); v != "" {
 		return v
 	}
-	if fetchCVSS {
+	if fetchMissingCVSS {
 		return nvdVectors[vulnID]
 	}
 	return ""

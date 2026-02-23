@@ -12,7 +12,7 @@ type RunOptions struct {
 	Opts           cvss.MetricsOptions
 	ForceCtxRating bool
 	UseEPSS        bool
-	FetchCVSS      bool
+	FetchMissingCVSS      bool
 	NvdAPIKey      string
 }
 
@@ -34,7 +34,7 @@ func Parse() RunOptions {
 	smartApply := flag.Bool("smart", false, "Smartly apply environmental metrics only if the environmental score would be lowered, does not affect CR/IR/AR.")
 	forceCtxRating := flag.Bool("force-ctx-rating", false, "Force a contextual rating based on what Trivy gave even if CVSS doesn't exist from Trivy")
 	useEPSS := flag.Bool("epss", false, "Fetch EPSS per CVE and set Exploit Code Maturity (E) from EPSS score bands")
-	fetchCVSS := flag.Bool("fetch-cvss", false, "For CVEs with no CVSS source, fetch CVSS from NVD (rate limited without API key)")
+	fetchMissingCVSS := flag.Bool("fetch-missing-cvss", false, "For CVEs with no CVSS source, fetch CVSS from NVD")
 	flag.Parse()
 	return RunOptions{
 		Opts: cvss.MetricsOptions{
@@ -46,7 +46,7 @@ func Parse() RunOptions {
 		},
 		ForceCtxRating: *forceCtxRating,
 		UseEPSS:        *useEPSS,
-		FetchCVSS:      *fetchCVSS,
+		FetchMissingCVSS:      *fetchMissingCVSS,
 		NvdAPIKey:      os.Getenv("NVD_API_KEY"),
 	}
 }

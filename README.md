@@ -23,9 +23,16 @@ Example: Recalculate for a High Availability environment behind a secure VPN
 trivy image local-app:latest -f json --output plugin=context-cvss --output-plugin-arg "-ma=N -mav=A"
 ```
 
+Example: Include EPSS data and derive Exploit Code Maturity from EPSS score bands
+```bash
+trivy image local-app:latest -f json --output plugin=context-cvss --output-plugin-arg "-ma=N -mav=A --epss"
+```
+
 
 ## 📊Output
-The plugin injects a new EnvironmentalMetrics object into the Custom field of the JSON report. It preserves the original Trivy finding while providing the context-aware score.
+The plugin injects a new ContextualMetrics object into the Custom field of the JSON report. It preserves the original Trivy finding while providing the context-aware score.
+
+### Without EPSS
 ```json
 {
   ...
@@ -43,6 +50,44 @@ The plugin injects a new EnvironmentalMetrics object into the Custom field of th
             "TemporalRating": "HIGH",
             "EnvironmentalScore": 0,
             "EnvironmentalRating": "NONE"
+          }
+        },
+        "CVSS": {
+          "redhat": {
+            "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+            "V3Score": 7.5
+          }
+        }
+      }
+      ...
+    ],
+  ],
+  ...
+}
+```
+
+### With EPSS (`--epss`)
+When `--epss` is passed, the plugin fetches EPSS scores from the FIRST API and includes them in the output. The EPSS score is also used to derive the Exploit Code Maturity (`E`) temporal metric automatically.
+```json
+{
+  ...
+  "Results": [
+    ...
+    "Vulnerabilities": [
+      ...
+      {
+        "VulnerabilityID":"CVE-2025-49795",
+        ...
+        "Custom": {
+          "ContextualMetrics": {
+            "Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H/MAV:A/MA:N/E:P",
+            "TemporalScore": 6.8,
+            "TemporalRating": "MEDIUM",
+            "EnvironmentalScore": 0,
+            "EnvironmentalRating": "NONE",
+            "EpssScore": 0.00234,
+            "EpssPercentile": 0.512,
+            "EpssDate": "2025-06-01"
           }
         },
         "CVSS": {
