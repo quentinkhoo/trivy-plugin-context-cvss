@@ -77,47 +77,35 @@ func setContextualMetrics(vuln map[string]any, metrics contextualMetrics) {
 
 // CollectCVEsWithoutCVSS returns CVE IDs that have no CVSS source in the report.
 func CollectCVEsWithoutCVSS(results []any) []string {
-	var out []string
-	seen := make(map[string]bool)
-	for _, r := range results {
-		resa, _ := r.(map[string]any)
-		if resa == nil {
-			continue
-		}
-		vulns, _ := resa["Vulnerabilities"].([]any)
-		for _, v := range vulns {
-			vuln, _ := v.(map[string]any)
-			if vuln == nil || chooseCVSSSource(vuln) != "" {
-				continue
-			}
-			id, _ := vuln["VulnerabilityID"].(string)
-			if id != "" && !seen[id] {
-				seen[id] = true
-				out = append(out, id)
-			}
-		}
-	}
-	return out
+	return collectCVEIDs(results, func(vuln map[string]any) bool {
+		return chooseCVSSSource(vuln) == ""
+	})
 }
 
 // CollectAllCVEIDs returns deduplicated CVE IDs from all vulnerabilities in results.
 func CollectAllCVEIDs(results []any) []string {
+	return collectCVEIDs(results, func(_ map[string]any) bool { return true })
+}
+
+// collectCVEIDs iterates all vulnerabilities across results and returns deduplicated
+// CVE IDs for which include returns true.
+func collectCVEIDs(results []any, include func(map[string]any) bool) []string {
 	var out []string
-	seen := make(map[string]bool)
+	seen := make(map[string]struct{})
 	for _, r := range results {
-		resa, _ := r.(map[string]any)
-		if resa == nil {
+		resultMap, _ := r.(map[string]any)
+		if resultMap == nil {
 			continue
 		}
-		vulns, _ := resa["Vulnerabilities"].([]any)
+		vulns, _ := resultMap["Vulnerabilities"].([]any)
 		for _, v := range vulns {
 			vuln, _ := v.(map[string]any)
-			if vuln == nil {
+			if vuln == nil || !include(vuln) {
 				continue
 			}
 			id, _ := vuln["VulnerabilityID"].(string)
-			if id != "" && !seen[id] {
-				seen[id] = true
+			if _, alreadySeen := seen[id]; id != "" && !alreadySeen {
+				seen[id] = struct{}{}
 				out = append(out, id)
 			}
 		}
@@ -129,10 +117,8 @@ func CollectAllCVEIDs(results []any) []string {
 func ProcessVuln(vuln map[string]any, nvdVectors map[string]string, epssData map[string]epss.Data, ro flags.RunOptions) {
 	vulnID, _ := vuln["VulnerabilityID"].(string)
 	severity, _ := vuln["Severity"].(string)
-	vectorStr := getCVSSVectorFromVuln(vuln)
-	if vectorStr == "" && ro.FetchCVSS {
-		vectorStr = nvdVectors[vulnID]
-	}
+
+	vectorStr := resolveVector(vuln, vulnID, nvdVectors, ro.FetchCVSS)
 	if vectorStr == "" {
 		if ro.ForceCtxRating {
 			setContextualMetrics(vuln, contextualMetrics{
@@ -142,19 +128,11 @@ func ProcessVuln(vuln map[string]any, nvdVectors map[string]string, epssData map
 		}
 		return
 	}
-	eVal := ro.Opts.E
-	if ro.UseEPSS {
-		if data, ok := epssData[vulnID]; ok {
-			eVal = epss.EPSSToExploitMaturity(data.Score)
-		} else if eVal == "" {
-			eVal = "X"
-		}
-	}
-	if eVal == "" {
-		eVal = "X"
-	}
+
+	epssEntry, hasEPSS := epssData[vulnID]
 	opts := ro.Opts
-	opts.E = eVal
+	opts.E = resolveExploitMaturity(ro.Opts.E, ro.UseEPSS, epssEntry, hasEPSS)
+
 	newVectorStr, err := cvss.ApplyMetrics(vectorStr, opts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error applying environmental metrics for %s: %v\n", vulnID, err)
@@ -165,6 +143,7 @@ func ProcessVuln(vuln map[string]any, nvdVectors map[string]string, epssData map
 		fmt.Fprintf(os.Stderr, "Error calculating scores for %s: %v\n", vulnID, err)
 		return
 	}
+
 	metrics := contextualMetrics{
 		Vector:              newVectorStr,
 		TemporalScore:       tempScore,
@@ -172,14 +151,37 @@ func ProcessVuln(vuln map[string]any, nvdVectors map[string]string, epssData map
 		EnvironmentalScore:  envScore,
 		EnvironmentalRating: cvss.CalculateSeverityRating(envScore),
 	}
-	if ro.UseEPSS {
-		if data, ok := epssData[vulnID]; ok {
-			metrics.EpssScore = &data.Score
-			metrics.EpssPercentile = &data.Percentile
-			if data.Date != "" {
-				metrics.EpssDate = &data.Date
-			}
+	if ro.UseEPSS && hasEPSS {
+		metrics.EpssScore = &epssEntry.Score
+		metrics.EpssPercentile = &epssEntry.Percentile
+		if epssEntry.Date != "" {
+			metrics.EpssDate = &epssEntry.Date
 		}
 	}
 	setContextualMetrics(vuln, metrics)
+}
+
+// resolveVector returns the CVSS vector for the vulnerability, falling back to
+// the NVD-fetched vector if the report has none and fetchCVSS is enabled.
+func resolveVector(vuln map[string]any, vulnID string, nvdVectors map[string]string, fetchCVSS bool) string {
+	if v := getCVSSVectorFromVuln(vuln); v != "" {
+		return v
+	}
+	if fetchCVSS {
+		return nvdVectors[vulnID]
+	}
+	return ""
+}
+
+// resolveExploitMaturity returns the exploit maturity value to use. If EPSS is
+// enabled and data is available, it derives the value from the EPSS score.
+// Otherwise it falls back to the configured value, defaulting to "X" (not defined).
+func resolveExploitMaturity(configured string, useEPSS bool, epssEntry epss.Data, hasEPSS bool) string {
+	if useEPSS && hasEPSS {
+		return epss.EPSSToExploitMaturity(epssEntry.Score)
+	}
+	if configured == "" {
+		return "X"
+	}
+	return configured
 }

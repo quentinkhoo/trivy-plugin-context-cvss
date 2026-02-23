@@ -14,23 +14,24 @@ const (
 	requestTimeout = 15 * time.Second
 )
 
+type cvssData struct {
+	VectorString string `json:"vectorString"`
+}
+
+type cvssMetricEntry struct {
+	Type     string   `json:"type"`
+	CVSSData cvssData `json:"cvssData"`
+}
+
+type nvdMetrics struct {
+	CVSSMetricV31 []cvssMetricEntry `json:"cvssMetricV31"`
+	CVSSMetricV30 []cvssMetricEntry `json:"cvssMetricV30"`
+}
+
 type nvdResponse struct {
 	Vulnerabilities []struct {
 		CVE struct {
-			Metrics struct {
-				CVSSMetricV31 []struct {
-					Type     string `json:"type"`
-					CVSSData struct {
-						VectorString string `json:"vectorString"`
-					} `json:"cvssData"`
-				} `json:"cvssMetricV31"`
-				CVSSMetricV30 []struct {
-					Type     string `json:"type"`
-					CVSSData struct {
-						VectorString string `json:"vectorString"`
-					} `json:"cvssData"`
-				} `json:"cvssMetricV30"`
-			} `json:"metrics"`
+			Metrics nvdMetrics `json:"metrics"`
 		} `json:"cve"`
 	} `json:"vulnerabilities"`
 }
@@ -51,7 +52,9 @@ func NewClient(apiKey string) *Client {
 
 // FetchCVSSV3Vector returns the CVSS v3.1 or v3.0 vector string for the given CVE ID.
 func (c *Client) FetchCVSSV3Vector(cveID string) (string, error) {
-	req, err := http.NewRequest(http.MethodGet, nvdAPIBase+"?cveId="+url.QueryEscape(cveID), nil)
+	params := url.Values{}
+	params.Set("cveId", cveID)
+	req, err := http.NewRequest(http.MethodGet, nvdAPIBase+"?"+params.Encode(), nil)
 	if err != nil {
 		return "", fmt.Errorf("nvd request: %w", err)
 	}
@@ -77,61 +80,31 @@ func (c *Client) FetchCVSSV3Vector(cveID string) (string, error) {
 		return "", nil
 	}
 	metrics := body.Vulnerabilities[0].CVE.Metrics
-	if v := pickVector(metrics.CVSSMetricV31); v != "" {
-		return strings.ReplaceAll(v, `\/`, "/"), nil
-	}
-	if v := pickVectorV30(metrics.CVSSMetricV30); v != "" {
-		return strings.ReplaceAll(v, `\/`, "/"), nil
+	// Try v3.1 first, fall back to v3.0.
+	for _, entries := range [][]cvssMetricEntry{metrics.CVSSMetricV31, metrics.CVSSMetricV30} {
+		if v := pickVector(entries); v != "" {
+			// The NVD API occasionally returns JSON-escaped forward slashes (\/),
+			// which is valid JSON but invalid in CVSS vector strings.
+			return strings.ReplaceAll(v, `\/`, "/"), nil
+		}
 	}
 	return "", nil
 }
 
-func pickVector(entries []struct {
-	Type     string `json:"type"`
-	CVSSData struct {
-		VectorString string `json:"vectorString"`
-	} `json:"cvssData"`
-}) string {
-	var primary, first string
+// pickVector returns the Primary vector from entries, falling back to the first
+// non-empty vector if no Primary entry exists.
+func pickVector(entries []cvssMetricEntry) string {
+	var first string
 	for _, e := range entries {
 		if e.CVSSData.VectorString == "" {
 			continue
 		}
-		if first == "" {
-			first = e.CVSSData.VectorString
-		}
 		if strings.EqualFold(e.Type, "Primary") {
-			primary = e.CVSSData.VectorString
-			break
-		}
-	}
-	if primary != "" {
-		return primary
-	}
-	return first
-}
-
-func pickVectorV30(entries []struct {
-	Type     string `json:"type"`
-	CVSSData struct {
-		VectorString string `json:"vectorString"`
-	} `json:"cvssData"`
-}) string {
-	var primary, first string
-	for _, e := range entries {
-		if e.CVSSData.VectorString == "" {
-			continue
+			return e.CVSSData.VectorString
 		}
 		if first == "" {
 			first = e.CVSSData.VectorString
 		}
-		if strings.EqualFold(e.Type, "Primary") {
-			primary = e.CVSSData.VectorString
-			break
-		}
-	}
-	if primary != "" {
-		return primary
 	}
 	return first
 }

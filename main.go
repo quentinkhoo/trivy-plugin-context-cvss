@@ -14,18 +14,29 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	ro := flags.Parse()
 	inputData, err := io.ReadAll(os.Stdin)
 	if err != nil {
-		panic(fmt.Errorf("failed to read from stdin: %w", err))
+		return fmt.Errorf("failed to read from stdin: %w", err)
 	}
 	var reportData map[string]any
 	if err := json.Unmarshal(inputData, &reportData); err != nil {
-		panic(fmt.Errorf("failed to parse JSON: %w", err))
+		return fmt.Errorf("failed to parse JSON: %w", err)
 	}
 	processReport(reportData, ro)
-	output, _ := json.MarshalIndent(reportData, "", "  ")
+	output, err := json.MarshalIndent(reportData, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal output: %w", err)
+	}
 	fmt.Println(string(output))
+	return nil
 }
 
 func processReport(reportData map[string]any, ro flags.RunOptions) {
@@ -42,11 +53,11 @@ func processReport(reportData map[string]any, ro flags.RunOptions) {
 		epssData = fetchEPSSData(report.CollectAllCVEIDs(results))
 	}
 	for _, r := range results {
-		resa, _ := r.(map[string]any)
-		if resa == nil {
+		resultMap, _ := r.(map[string]any)
+		if resultMap == nil {
 			continue
 		}
-		vulns, _ := resa["Vulnerabilities"].([]any)
+		vulns, _ := resultMap["Vulnerabilities"].([]any)
 		for _, v := range vulns {
 			vuln, _ := v.(map[string]any)
 			if vuln != nil {
@@ -59,6 +70,7 @@ func processReport(reportData map[string]any, ro flags.RunOptions) {
 func fetchNVDVectors(cveIDs []string, apiKey string) map[string]string {
 	out := make(map[string]string)
 	client := nvd.NewClient(apiKey)
+	// NVD rate limits: 5 req/30s without API key (1 per 6s), 50 req/30s with key (1 per ~0.6s).
 	throttle := 6 * time.Second
 	if apiKey != "" {
 		throttle = time.Second

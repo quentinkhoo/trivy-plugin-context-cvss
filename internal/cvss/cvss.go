@@ -76,7 +76,7 @@ func CalculateSeverityRating(score float64) string {
 	if score == 0.0 {
 		return "NONE"
 	}
-	if score >= 0.1 && score <= 3.9 {
+	if score > 0.0 && score <= 3.9 {
 		return "LOW"
 	}
 	if score >= 4.0 && score <= 6.9 {

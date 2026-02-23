@@ -35,12 +35,7 @@ func Parse() RunOptions {
 	forceCtxRating := flag.Bool("force-ctx-rating", false, "Force a contextual rating based on what Trivy gave even if CVSS doesn't exist from Trivy")
 	useEPSS := flag.Bool("epss", false, "Fetch EPSS per CVE and set Exploit Code Maturity (E) from EPSS score bands")
 	fetchCVSS := flag.Bool("fetch-cvss", false, "For CVEs with no CVSS source, fetch CVSS from NVD (rate limited without API key)")
-	nvdAPIKey := flag.String("nvd-api-key", "", "NVD API key for higher rate limits (50/30s); or set NVD_API_KEY env")
 	flag.Parse()
-	apiKey := *nvdAPIKey
-	if apiKey == "" {
-		apiKey = os.Getenv("NVD_API_KEY")
-	}
 	return RunOptions{
 		Opts: cvss.MetricsOptions{
 			E: *modExploitCodeMaturity, RL: *modRemediationLevel, RC: *modReportConf,
@@ -52,6 +47,6 @@ func Parse() RunOptions {
 		ForceCtxRating: *forceCtxRating,
 		UseEPSS:        *useEPSS,
 		FetchCVSS:      *fetchCVSS,
-		NvdAPIKey:      apiKey,
+		NvdAPIKey:      os.Getenv("NVD_API_KEY"),
 	}
 }

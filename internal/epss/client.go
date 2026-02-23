@@ -3,9 +3,12 @@ package epss
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -27,7 +30,6 @@ type epssResponse struct {
 	Limit  int `json:"limit"`
 }
 
-// Data holds EPSS score, percentile, and date for a CVE.
 type Data struct {
 	Score      float64
 	Percentile float64
@@ -46,29 +48,55 @@ func NewClient() *Client {
 
 // FetchScores returns a map of CVE ID -> EPSS data for the given CVE IDs.
 func (c *Client) FetchScores(cveIDs []string) (map[string]Data, error) {
-	if len(cveIDs) == 0 {
-		return map[string]Data{}, nil
-	}
 	result := make(map[string]Data)
-	for i := 0; i < len(cveIDs); i += maxCVEsPerRequest {
-		end := i + maxCVEsPerRequest
-		if end > len(cveIDs) {
-			end = len(cveIDs)
-		}
-		got, err := c.fetchBatch(cveIDs[i:end])
+	for batch := range slices.Chunk(cveIDs, maxCVEsPerRequest) {
+		got, err := c.fetchBatch(batch)
 		if err != nil {
 			return result, err
 		}
-		for k, v := range got {
-			result[k] = v
-		}
+		maps.Copy(result, got)
 	}
 	return result, nil
 }
 
+// fetchBatch fetches EPSS scores for a slice of CVE IDs in a single batch,
+// paginating through results until all records have been collected.
 func (c *Client) fetchBatch(cveIDs []string) (map[string]Data, error) {
+	out := make(map[string]Data)
+	cveParam := strings.Join(cveIDs, ",")
+	offset := 0
+
+	for {
+		page, err := c.fetchPage(cveParam, offset)
+		if err != nil {
+			return nil, err
+		}
+		for _, d := range page.Data {
+			score, err := strconv.ParseFloat(d.EPSS, 64)
+			if err != nil {
+				continue
+			}
+			percentile, _ := strconv.ParseFloat(d.Percentile, 64)
+			out[d.CVE] = Data{Score: score, Percentile: percentile, Date: d.Date}
+		}
+		offset += len(page.Data)
+		// Stop when we've collected all records, or if the API returned an empty
+		// page unexpectedly (guards against an infinite loop).
+		if offset >= page.Total || len(page.Data) == 0 {
+			break
+		}
+	}
+	return out, nil
+}
+
+// fetchPage makes a single HTTP request to the EPSS API for the given CVE param
+// and page offset, returning the decoded response. For example:
+//
+//	GET https://api.first.org/data/v1/epss?cve=CVE-2021-44228%2CCVE-2022-0001&offset=0
+func (c *Client) fetchPage(cveParam string, offset int) (*epssResponse, error) {
 	params := url.Values{}
-	params.Set("cve", joinCVEs(cveIDs))
+	params.Set("cve", cveParam)
+	params.Set("offset", strconv.Itoa(offset))
 	req, err := http.NewRequest(http.MethodGet, apiBaseURL+"?"+params.Encode(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("epss request: %w", err)
@@ -85,26 +113,5 @@ func (c *Client) fetchBatch(cveIDs []string) (map[string]Data, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		return nil, fmt.Errorf("epss decode: %w", err)
 	}
-	out := make(map[string]Data)
-	for _, d := range body.Data {
-		score, err := strconv.ParseFloat(d.EPSS, 64)
-		if err != nil {
-			continue
-		}
-		percentile, _ := strconv.ParseFloat(d.Percentile, 64)
-		out[d.CVE] = Data{Score: score, Percentile: percentile, Date: d.Date}
-	}
-	return out, nil
-}
-
-func joinCVEs(cveIDs []string) string {
-	if len(cveIDs) == 0 {
-		return ""
-	}
-	b := []byte(cveIDs[0])
-	for i := 1; i < len(cveIDs); i++ {
-		b = append(b, ',')
-		b = append(b, cveIDs[i]...)
-	}
-	return string(b)
+	return &body, nil
 }

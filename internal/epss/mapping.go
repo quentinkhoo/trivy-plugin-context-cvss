@@ -1,7 +1,8 @@
 package epss
 
+// We modify the Exploit Maturity Code (E) value depending on the EPSS score.
 const (
-	ThresholdUnproven    = 0.05
+	ThresholdUnproven   = 0.05
 	ThresholdPoC        = 0.20
 	ThresholdFunctional = 0.50
 )
@@ -9,7 +10,7 @@ const (
 // EPSSToExploitMaturity maps an EPSS score (0-1) to CVSS v3 Exploit Code Maturity (U, P, F, H).
 func EPSSToExploitMaturity(score float64) string {
 	switch {
-	case score < 0:
+	case score < 0: // honestly should never happen. we X to not break shit
 		return "X"
 	case score < ThresholdUnproven:
 		return "U"
